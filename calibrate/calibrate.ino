@@ -35,7 +35,7 @@ void loop() {
 
     // Example commands:
     // "1 45" → move servo 1 to 45°
-    // "3 10" → move stepper 10mm
+    // "3 2" → move stepper 2 cm
     // "cal 1" → make current servo 1 position new zero
 
     if (input.startsWith("cal")) {
