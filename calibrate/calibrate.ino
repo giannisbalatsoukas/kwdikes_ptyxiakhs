@@ -86,14 +86,11 @@ void moveServoToAngle(int ID, int angle) {
 void calibrateServo(int ID) {
   int result = st.CalibrationOfs(ID);
   if (result == 1) {
-    Serial.print("✅ Servo ");
+    Serial.print("Servo ");
     Serial.print(ID);
     Serial.println(" calibrated: current position set as zero.");
   } else {
-    Serial.print("⚠️ Calibration failed on servo ");
+    Serial.print("Calibration failed on servo ");
     Serial.print(ID);
-    Serial.print(" (error code ");
-    Serial.print(result);
-    Serial.println(").");
   }
 }
