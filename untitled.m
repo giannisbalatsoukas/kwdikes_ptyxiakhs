@@ -37,9 +37,9 @@ xlabel('X');
 ylabel('Y');
 zlabel('Z');
 
-xlim([-0.2 0.2]);
-ylim([-0.2 0.2]);
-zlim([-0.2 0.2]);
+xlim([-0.05 0.05]);
+ylim([-0.05 0.05]);
+zlim([-0.05 0.05]);
 
 figure(2);
 
