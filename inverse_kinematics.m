@@ -41,8 +41,9 @@ function [theta1, k, d] = inverse_kinematics(px, py, pz)
 
     theta1 = (180/pi)*theta1_rad;
 
-    if theta1 < 0
-        theta1 = theta1 + 360;
-    end
+    %if theta1 < 0
+    %    theta1 = theta1 + 360;
+    %end
+
 
 end
