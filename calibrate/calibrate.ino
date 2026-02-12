@@ -35,7 +35,7 @@ void loop() {
 
     // Example commands:
     // "1 45" → move servo 1 to 45°
-    // "3 2" → move stepper 2 cm
+    // "3 2" → move stepper 2 mm
     // "cal 1" → make current servo 1 position new zero
 
     if (input.startsWith("cal")) {
@@ -53,7 +53,7 @@ void loop() {
         } 
         else if(ID == 3)
         {
-          steps = (number * 200) / 0.8;
+          steps = (number * 200) / 8;
 
       if (steps != 0) {
         digitalWrite(enblPin, HIGH);
