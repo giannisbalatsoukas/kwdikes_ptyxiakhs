@@ -1,0 +1,72 @@
+% [Keep all your trajectory generation code exactly as it is above]
+% ...
+% ...
+
+% --- 1. POST-PROCESSING (Fixing the "Jump") ---
+% Unwrap angles so we don't jump from 180 to -180
+% Convert to radians, unwrap, convert back
+theta1_unwrapped = unwrap(deg2rad(theta1)); 
+theta1 = rad2deg(theta1_unwrapped);
+
+% --- 2. COMMUNICATION SETUP ---
+if exist('arduino', 'var')
+    clear arduino; % Safety clear
+end
+
+fprintf("Connecting to Arduino...\n");
+arduino = serialport("COM6", 115200);
+configureTerminator(arduino, "LF"); 
+flush(arduino); 
+pause(3); % Wait for Arduino reboot
+
+% --- 3. STARTING POSITION ---
+prev_d = d_cm(1);
+prev_t = time_total_array(1);
+
+data_string = sprintf("%.4f,%.4f,%.4f", theta1(1), theta2(1), 0);
+writeline(arduino, data_string);
+
+% Wait for the first handshake (The 'D')
+while(arduino.NumBytesAvailable == 0)
+    pause(0.01);
+end
+read_ack = readline(arduino); 
+fprintf("Robot Ready. Starting Trajectory.\n");
+
+% --- 4. EXECUTION LOOP ---
+tic
+for i = 2:num_points
+    
+    val_servo1 = theta1(i);
+    val_servo2 = theta2(i);
+    
+    current_d = d_cm(i);
+    val_stepper = current_d - prev_d;
+    prev_d = current_d;
+
+    % Send Data
+    data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper);
+    writeline(arduino, data_string);
+    
+    % --- THE FIX: HANDSHAKING ---
+    % Instead of pausing for a fixed time, we wait for the Arduino 
+    % to tell us it is done processing the command.
+    % This guarantees perfect synchronization.
+    
+    ack = "";
+    while(arduino.NumBytesAvailable == 0)
+        % While waiting, we can do a tiny pause to save CPU
+        % but we essentially wait for the robot.
+        % If you want strict time adherence (20s total), we can add logic here,
+        % but for smoothness, this is best.
+    end
+    ack = readline(arduino); % Read the "D"
+    
+end
+toc
+
+% Completion
+data_string = sprintf("%.4f,%.4f,%.4f", 0, 0, 0);
+writeline(arduino, data_string);
+fprintf("Motion Complete.\n");
+clear arduino;
