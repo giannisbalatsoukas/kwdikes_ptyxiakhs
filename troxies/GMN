@@ -8,101 +8,86 @@ const int dirPin = 6;
 const int stepPin = 5;
 const int enblPin = 3;
 
+// Stepper Initialization
 AccelStepper myStepper(AccelStepper::DRIVER, stepPin, dirPin);
 
-// Variables for parsing
-const byte numChars = 32;
-char receivedChars[numChars];
-boolean newData = false;
+String inputString = "";
 
 void setup() {
+  
   pinMode(enblPin, OUTPUT);
   digitalWrite(enblPin, LOW);
 
-  // High speed settings for smooth motion
-  myStepper.setMaxSpeed(4000.0);    
-  myStepper.setAcceleration(2000.0); 
+  myStepper.setMaxSpeed(2000.0);    
+  myStepper.setAcceleration(1000.0); 
 
+  // Servo Initialization
   Serial.begin(115200);
   Serial1.begin(1000000);
   st.pSerial = &Serial1;
+
+  inputString.reserve(50);
 }
 
 void loop() {
-  recvWithStartEndMarkers();
-  
-  if (newData) {
-    parseAndExecute();
-    newData = false;
-    // --- CRITICAL: HANDSHAKE ---
-    // Tell MATLAB we are ready for the next point
-    Serial.println("D"); 
-  }
-  
-  // This must be called as fast as possible!
-  myStepper.run(); 
-}
+  myStepper.run();
 
-void recvWithStartEndMarkers() {
-  static byte ndx = 0;
-  char endMarker = '\n';
-  char rc;
-
-  while (Serial.available() > 0 && newData == false) {
-    rc = Serial.read();
-
-    if (rc != endMarker) {
-      receivedChars[ndx] = rc;
-      ndx++;
-      if (ndx >= numChars) {
-        ndx = numChars - 1;
-      }
-    }
-    else {
-      receivedChars[ndx] = '\0'; // Terminate string
-      ndx = 0;
-      newData = true;
+  while (Serial.available() > 0) {
+    // myStepper.run(); // Removed from here to avoid slowing down serial reading
+    
+    char inChar = (char)Serial.read();
+    if (inChar == '\n') {
+      executeTraj(inputString);
+      
+      // --- CORRECTION: Handshake Signal ---
+      // Tell MATLAB we are done processing
+      Serial.print("D"); 
+      Serial.flush();
+      
+      inputString = "";
+    } else {
+      inputString += inChar;
     }
   }
 }
 
-void parseAndExecute() {
-  char * strtokIndx; 
+void executeTraj(String input) {
+  int comma1 = input.indexOf(',');
+  int comma2 = input.indexOf(',', comma1 + 1);
 
-  // 1. Parse Theta 1
-  strtokIndx = strtok(receivedChars, ",");
-  if (strtokIndx == NULL) return;
-  float val1 = atof(strtokIndx); 
+  if (comma1 > 0 && comma2 > 0) {
+    // Extract values
+    float val1 = input.substring(0, comma1).toFloat();
+    float val2 = input.substring(comma1 + 1, comma2).toFloat();
+    float val3 = input.substring(comma2 + 1).toFloat();
 
-  // 2. Parse Theta 2
-  strtokIndx = strtok(NULL, ",");
-  if (strtokIndx == NULL) return;
-  float val2 = atof(strtokIndx);
+    // --- SERVO 1 (ABSOLUTE) ---
+    moveServoToAbsolute(1, val1);
 
-  // 3. Parse Stepper Distance
-  strtokIndx = strtok(NULL, ",");
-  if (strtokIndx == NULL) return;
-  float val3 = atof(strtokIndx);
+    // --- SERVO 2 (ABSOLUTE) ---
+    moveServoToAbsolute(2, val2);
 
-  // --- MOVE MOTORS ---
-  moveServoToAbsolute(1, val1);
-  moveServoToAbsolute(2, val2);
-  
-  // Stepper calc
-  long steps = (val3 * 400.0) / 0.8;
-  if (steps != 0) {
-     digitalWrite(enblPin, HIGH);
-     myStepper.move(steps); // relative move
+    // --- STEPPER (RELATIVE) ---
+    int steps = (val3 * 400) / 0.8;
+    
+    if (steps != 0) {
+      digitalWrite(enblPin, HIGH);
+      myStepper.move(steps);
+      
+      // Important: We must wait for stepper to finish to keep sync? 
+      // OR allow it to move while MATLAB calculates. 
+      // For smoothest path, we just issue the command.
+    }
   }
 }
 
 float angleToPosition(float angle) {
-  // Simple constraint to prevent math errors
+  // Constrain to prevent mechanical damage if math goes wild
   angle = constrain(angle, -180, 180);
   return map(angle, -180, 180, 0, 4095);
 }
 
 void moveServoToAbsolute(int ID, float angle) {
   float pos = angleToPosition(angle);
-  st.WritePosEx(ID, pos, 0, 0); 
+  st.WritePosEx(ID, pos, 0, 0);
 }
