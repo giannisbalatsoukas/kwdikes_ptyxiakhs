@@ -100,8 +100,6 @@ xlabel('t (s)');
 ylabel('d (cm)');
 grid on;
 
-%exportcsv
-%{
 %Communication Setup
 arduino = serialport("COM6", 115200);
 pause(3);
@@ -156,4 +154,3 @@ data_string = sprintf("%.4f,%.4f,%.4f", 0, 0, 0);
 writeline(arduino, data_string);
 fprintf("Motion Complete.\n");
 clear arduino;
-%}
