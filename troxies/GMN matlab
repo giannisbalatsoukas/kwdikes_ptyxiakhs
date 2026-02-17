@@ -1,70 +1,171 @@
-% [Keep all your trajectory generation code exactly as it is above]
-% ...
-% ...
+clear all;
 
-% --- 1. POST-PROCESSING (Fixing the "Jump") ---
-% Unwrap angles so we don't jump from 180 to -180
-% Convert to radians, unwrap, convert back
-theta1_unwrapped = unwrap(deg2rad(theta1)); 
-theta1 = rad2deg(theta1_unwrapped);
+num_points = 200;
+t_total = 20;
 
-% --- 2. COMMUNICATION SETUP ---
-if exist('arduino', 'var')
-    clear arduino; % Safety clear
+time_total_array = linspace(0, t_total, num_points);
+
+p = zeros(3, num_points);
+
+theta1 = zeros(1, num_points);
+theta2 = zeros(1, num_points); % Pre-allocate theta2
+k = zeros(1, num_points);
+d = zeros(1, num_points);
+
+r = 0.02;       % Radius (2 cm)
+
+% R = [cosd(45) 0 sind(45); 0 1 0; -sind(45) 0 cosd(45)];
+R = [1 0 0; 0 cosd(45) sind(45); 0 -sind(45) cosd(45)];
+
+% c = [0.01; 0.01; 0.05];       % Center coordinates
+c = [0; 0; 0];
+
+s = linspace(0, 2*pi, num_points);
+
+% Calculate Circle
+for i = 1:num_points
+    p(:, i) = c + R * [r*cos(s(i)); r*sin(s(i)); 0];
 end
 
-fprintf("Connecting to Arduino...\n");
+for i = 1:num_points  
+    [theta1(i), k(i), d(i)] = inverse_kinematics(p(1, i), p(2, i), p(3, i));
+
+    % theta2(i) = (k(i)/1.3319) - 0.9733;
+    theta2(i) = (k(i)-4.13262)/1.37473;
+end
+
+% --- CORRECTION 1: Unwrap Angles ---
+% This prevents the jump from 180 to -180 degrees
+theta1 = rad2deg(unwrap(deg2rad(theta1)));
+
+% Plotting
+figure;
+plot3(p(1,:), p(2,:), p(3,:), 'LineWidth', 2);
+grid on;
+axis equal;
+xlabel('X');
+ylabel('Y');
+zlabel('Z');
+
+xlim([-0.05 0.05]);
+ylim([-0.05 0.05]);
+zlim([-0.05 0.05]);
+
+figure;
+
+subplot(5,1,1);
+plot(time_total_array, p(1,  :)*1000);
+xlabel('t (s)');
+ylabel('x');
+grid on;
+
+subplot(5,1,2);
+plot(time_total_array, p(2, :)*1000);
+xlabel('t (s)');
+ylabel('y');
+grid on;
+
+subplot(5,1,3);
+plot(time_total_array, p(3, :)*1000);
+xlabel('t (s)');
+ylabel('z');
+grid on;
+
+figure;
+
+subplot(5,1,1);
+plot(time_total_array, theta1);
+xlabel('t (s)');
+ylabel('theta1 (degrees)');
+grid on;
+
+subplot(5,1,2);
+plot(time_total_array, k);
+xlabel('t (s)');
+ylabel('k (1/m)');
+grid on;
+
+subplot(5,1,3);
+plot(time_total_array, theta2);
+xlabel('t (s)');
+ylabel('theta2 (degrees)');
+grid on;
+
+subplot(5,1,4);
+plot(time_total_array, d);
+xlabel('t (s)');
+ylabel('d (m)');
+grid on;
+
+d_cm = 100.*d;
+
+subplot(5,1,5);
+plot(time_total_array, d_cm);
+xlabel('t (s)');
+ylabel('d (cm)');
+grid on;
+
+% Communication Setup
+% Ensure we close any old connections first
+if ~isempty(instrfind)
+    fclose(instrfind);
+    delete(instrfind);
+end
+
 arduino = serialport("COM6", 115200);
-configureTerminator(arduino, "LF"); 
-flush(arduino); 
-pause(3); % Wait for Arduino reboot
+configureTerminator(arduino, "LF"); % Match Arduino's println
+flush(arduino);
+pause(3); % Wait for Arduino reset
 
-% --- 3. STARTING POSITION ---
+% Define previous distance (for Stepper relative calc)
 prev_d = d_cm(1);
-prev_t = time_total_array(1);
 
+% Starting Position
 data_string = sprintf("%.4f,%.4f,%.4f", theta1(1), theta2(1), 0);
 writeline(arduino, data_string);
-
-% Wait for the first handshake (The 'D')
-while(arduino.NumBytesAvailable == 0)
+% Wait for initial 'D' from Arduino
+while arduino.NumBytesAvailable == 0
     pause(0.01);
 end
-read_ack = readline(arduino); 
-fprintf("Robot Ready. Starting Trajectory.\n");
+read(arduino, 1, "char"); 
+pause(1); % Small buffer before starting loop
 
-% --- 4. EXECUTION LOOP ---
+fprintf("Starting Motion...\n");
 tic
+
 for i = 2:num_points
-    
+   
+    % SERVO 1 & 2: Use Absolute Angle directly
     val_servo1 = theta1(i);
     val_servo2 = theta2(i);
-    
+   
+    % STEPPER: Calculate Relative Change (Delta)
     current_d = d_cm(i);
     val_stepper = current_d - prev_d;
-    prev_d = current_d;
+    prev_d = current_d; % Update for next loop
 
-    % Send Data
-    data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper);
+    % --- 2. SEND COMMAND ---
+    % data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper);
+    data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper); 
     writeline(arduino, data_string);
+   
+    % --- CORRECTION 2: HANDSHAKE (Synchronized Timing) ---
+    % Instead of guessing time with pause(), we wait for the Arduino to say "D" (Done).
+    % This guarantees the buffer never overflows.
     
-    % --- THE FIX: HANDSHAKING ---
-    % Instead of pausing for a fixed time, we wait for the Arduino 
-    % to tell us it is done processing the command.
-    % This guarantees perfect synchronization.
-    
-    ack = "";
-    while(arduino.NumBytesAvailable == 0)
-        % While waiting, we can do a tiny pause to save CPU
-        % but we essentially wait for the robot.
-        % If you want strict time adherence (20s total), we can add logic here,
-        % but for smoothness, this is best.
+    while arduino.NumBytesAvailable == 0
+        % Wait here until Arduino replies
     end
-    ack = readline(arduino); % Read the "D"
+    % Read the 'D' and discard it
+    read(arduino, 1, "char");
     
+    % If you still want to force the total time to be 20s, you can add a SMALL pause
+    % But the handshake is what makes it smooth.
 end
+
 toc
 
+pause(2);
 % Completion
 data_string = sprintf("%.4f,%.4f,%.4f", 0, 0, 0);
 writeline(arduino, data_string);
