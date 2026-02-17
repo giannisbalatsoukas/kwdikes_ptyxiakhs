@@ -105,69 +105,76 @@ xlabel('t (s)');
 ylabel('d (cm)');
 grid on;
 
-% Communication Setup
-% Ensure we close any old connections first
+% --- COMMUNICATION SETUP ---
 if ~isempty(instrfind)
     fclose(instrfind);
     delete(instrfind);
 end
 
+fprintf("Connecting to Arduino...\n");
 arduino = serialport("COM6", 115200);
-configureTerminator(arduino, "LF"); % Match Arduino's println
+configureTerminator(arduino, "LF"); 
 flush(arduino);
-pause(3); % Wait for Arduino reset
+pause(3); 
 
-% Define previous distance (for Stepper relative calc)
+% --- STARTING POSITION ---
 prev_d = d_cm(1);
+start_time = 0;
 
-% Starting Position
+% Send Initial Position
 data_string = sprintf("%.4f,%.4f,%.4f", theta1(1), theta2(1), 0);
 writeline(arduino, data_string);
-% Wait for initial 'D' from Arduino
+
+% Wait for Initial Handshake
 while arduino.NumBytesAvailable == 0
     pause(0.01);
 end
 read(arduino, 1, "char"); 
-pause(1); % Small buffer before starting loop
 
-fprintf("Starting Motion...\n");
-tic
+fprintf("Starting Motion (Target Time: %.1f s)...\n", t_total);
+
+% --- EXECUTION LOOP ---
+tic % Start the global timer
 
 for i = 2:num_points
-   
-    % SERVO 1 & 2: Use Absolute Angle directly
+    
+    % 1. Prepare Data
     val_servo1 = theta1(i);
     val_servo2 = theta2(i);
-   
-    % STEPPER: Calculate Relative Change (Delta)
+    
     current_d = d_cm(i);
     val_stepper = current_d - prev_d;
-    prev_d = current_d; % Update for next loop
+    prev_d = current_d;
 
-    % --- 2. SEND COMMAND ---
-    % data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper);
-    data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper); 
+    % 2. Send Command
+    data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper);
     writeline(arduino, data_string);
-   
-    % --- CORRECTION 2: HANDSHAKE (Synchronized Timing) ---
-    % Instead of guessing time with pause(), we wait for the Arduino to say "D" (Done).
-    % This guarantees the buffer never overflows.
     
+    % 3. SAFETY HANDSHAKE (Wait for Arduino to process)
+    % This ensures we NEVER overflow the Arduino buffer
     while arduino.NumBytesAvailable == 0
-        % Wait here until Arduino replies
+        % Busy wait
     end
-    % Read the 'D' and discard it
-    read(arduino, 1, "char");
+    read(arduino, 1, "char"); % Clear the 'D'
     
-    % If you still want to force the total time to be 20s, you can add a SMALL pause
-    % But the handshake is what makes it smooth.
+    % 4. TIMING CONTROL (Slow down to match 20s)
+    % This ensures we don't finish in 3.5 seconds
+    expected_time = time_total_array(i);
+    actual_time = toc;
+    
+    if actual_time < expected_time
+        pause(expected_time - actual_time);
+    end
 end
 
-toc
+final_time = toc;
+fprintf("Motion Complete. Actual Time: %.2f s\n", final_time);
 
-pause(2);
-% Completion
+% Completion Command
 data_string = sprintf("%.4f,%.4f,%.4f", 0, 0, 0);
+writeline(arduino, data_string);
+
+clear arduino;
 writeline(arduino, data_string);
 fprintf("Motion Complete.\n");
 clear arduino;
