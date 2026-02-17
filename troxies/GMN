@@ -8,20 +8,18 @@ const int dirPin = 6;
 const int stepPin = 5;
 const int enblPin = 3;
 
-// Stepper Initialization
 AccelStepper myStepper(AccelStepper::DRIVER, stepPin, dirPin);
 
 String inputString = "";
 
 void setup() {
-  
   pinMode(enblPin, OUTPUT);
   digitalWrite(enblPin, LOW);
 
-  myStepper.setMaxSpeed(2000.0);    
-  myStepper.setAcceleration(1000.0); 
+  // Increased speed slightly to ensure it doesn't lag behind the 20s timer
+  myStepper.setMaxSpeed(4000.0);    
+  myStepper.setAcceleration(4000.0); 
 
-  // Servo Initialization
   Serial.begin(115200);
   Serial1.begin(1000000);
   st.pSerial = &Serial1;
@@ -33,16 +31,13 @@ void loop() {
   myStepper.run();
 
   while (Serial.available() > 0) {
-    // myStepper.run(); // Removed from here to avoid slowing down serial reading
-    
     char inChar = (char)Serial.read();
     if (inChar == '\n') {
       executeTraj(inputString);
       
-      // --- CORRECTION: Handshake Signal ---
-      // Tell MATLAB we are done processing
+      // SEND HANDSHAKE
       Serial.print("D"); 
-      Serial.flush();
+      // Serial.flush() is not strictly needed for print, but good practice
       
       inputString = "";
     } else {
@@ -56,38 +51,28 @@ void executeTraj(String input) {
   int comma2 = input.indexOf(',', comma1 + 1);
 
   if (comma1 > 0 && comma2 > 0) {
-    // Extract values
     float val1 = input.substring(0, comma1).toFloat();
     float val2 = input.substring(comma1 + 1, comma2).toFloat();
     float val3 = input.substring(comma2 + 1).toFloat();
 
-    // --- SERVO 1 (ABSOLUTE) ---
     moveServoToAbsolute(1, val1);
-
-    // --- SERVO 2 (ABSOLUTE) ---
     moveServoToAbsolute(2, val2);
 
-    // --- STEPPER (RELATIVE) ---
-    int steps = (val3 * 400) / 0.8;
-    
+    // Stepper
+    long steps = (val3 * 400.0) / 0.8;
     if (steps != 0) {
-      digitalWrite(enblPin, HIGH);
-      myStepper.move(steps);
-      
-      // Important: We must wait for stepper to finish to keep sync? 
-      // OR allow it to move while MATLAB calculates. 
-      // For smoothest path, we just issue the command.
+       digitalWrite(enblPin, HIGH);
+       myStepper.move(steps);
     }
   }
 }
 
 float angleToPosition(float angle) {
-  // Constrain to prevent mechanical damage if math goes wild
   angle = constrain(angle, -180, 180);
   return map(angle, -180, 180, 0, 4095);
 }
 
 void moveServoToAbsolute(int ID, float angle) {
   float pos = angleToPosition(angle);
-  st.WritePosEx(ID, pos, 0, 0);
+  st.WritePosEx(ID, pos, 0, 0); 
 }
