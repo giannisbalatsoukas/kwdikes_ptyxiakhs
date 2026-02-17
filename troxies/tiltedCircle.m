@@ -129,8 +129,7 @@ for i = 2:num_points
     % --- 2. SEND COMMAND ---
     % Format: "AbsAngle1,AbsAngle2,Distance"
     % Example: "45.5, 12.0, 0.05"
-    %data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper);
-    data_string = sprintf("%.4f,%.4f,%.4f", 0, val_servo2, 0);
+    data_string = sprintf("%.4f,%.4f,%.4f", val_servo1, val_servo2, val_stepper);
     writeline(arduino, data_string);
    
     % --- 3. TIMING ---
@@ -154,3 +153,4 @@ data_string = sprintf("%.4f,%.4f,%.4f", 0, 0, 0);
 writeline(arduino, data_string);
 fprintf("Motion Complete.\n");
 clear arduino;
+
