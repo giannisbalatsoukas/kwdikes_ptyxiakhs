@@ -1,1 +1,108 @@
+#include <AccelStepper.h>
+#include <SCServo.h>
 
+SMS_STS st;
+
+// Stepper Pins
+const int dirPin = 6;
+const int stepPin = 5;
+const int enblPin = 3;
+
+AccelStepper myStepper(AccelStepper::DRIVER, stepPin, dirPin);
+
+// Variables for parsing
+const byte numChars = 32;
+char receivedChars[numChars];
+boolean newData = false;
+
+void setup() {
+  pinMode(enblPin, OUTPUT);
+  digitalWrite(enblPin, LOW);
+
+  // High speed settings for smooth motion
+  myStepper.setMaxSpeed(4000.0);    
+  myStepper.setAcceleration(2000.0); 
+
+  Serial.begin(115200);
+  Serial1.begin(1000000);
+  st.pSerial = &Serial1;
+}
+
+void loop() {
+  recvWithStartEndMarkers();
+  
+  if (newData) {
+    parseAndExecute();
+    newData = false;
+    // --- CRITICAL: HANDSHAKE ---
+    // Tell MATLAB we are ready for the next point
+    Serial.println("D"); 
+  }
+  
+  // This must be called as fast as possible!
+  myStepper.run(); 
+}
+
+void recvWithStartEndMarkers() {
+  static byte ndx = 0;
+  char endMarker = '\n';
+  char rc;
+
+  while (Serial.available() > 0 && newData == false) {
+    rc = Serial.read();
+
+    if (rc != endMarker) {
+      receivedChars[ndx] = rc;
+      ndx++;
+      if (ndx >= numChars) {
+        ndx = numChars - 1;
+      }
+    }
+    else {
+      receivedChars[ndx] = '\0'; // Terminate string
+      ndx = 0;
+      newData = true;
+    }
+  }
+}
+
+void parseAndExecute() {
+  char * strtokIndx; 
+
+  // 1. Parse Theta 1
+  strtokIndx = strtok(receivedChars, ",");
+  if (strtokIndx == NULL) return;
+  float val1 = atof(strtokIndx); 
+
+  // 2. Parse Theta 2
+  strtokIndx = strtok(NULL, ",");
+  if (strtokIndx == NULL) return;
+  float val2 = atof(strtokIndx);
+
+  // 3. Parse Stepper Distance
+  strtokIndx = strtok(NULL, ",");
+  if (strtokIndx == NULL) return;
+  float val3 = atof(strtokIndx);
+
+  // --- MOVE MOTORS ---
+  moveServoToAbsolute(1, val1);
+  moveServoToAbsolute(2, val2);
+  
+  // Stepper calc
+  long steps = (val3 * 400.0) / 0.8;
+  if (steps != 0) {
+     digitalWrite(enblPin, HIGH);
+     myStepper.move(steps); // relative move
+  }
+}
+
+float angleToPosition(float angle) {
+  // Simple constraint to prevent math errors
+  angle = constrain(angle, -180, 180);
+  return map(angle, -180, 180, 0, 4095);
+}
+
+void moveServoToAbsolute(int ID, float angle) {
+  float pos = angleToPosition(angle);
+  st.WritePosEx(ID, pos, 0, 0); 
+}
