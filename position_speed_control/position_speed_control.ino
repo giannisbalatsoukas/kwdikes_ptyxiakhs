@@ -3,8 +3,8 @@
 
 SMS_STS st;
 
-const int dirPin = 5;
-const int stepPin = 6;
+const int dirPin = 6;
+const int stepPin = 5;
 const int enblPin = 3;
 
 float number = 0;
