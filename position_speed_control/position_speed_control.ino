@@ -25,7 +25,7 @@ void setup() {
    Serial1.begin(1000000);
    st.pSerial = &Serial1;
 
-   st.WheelMode(2);
+   st.WheelMode(1);
 
    Serial.println("FOR STEPPER: 3 DISTANCE\nFOR 1ST SERVO: 1 ANGLE\nFRO 2ND SERVO: 2 SPEED(0-1023)");
 }
